@@ -1,0 +1,95 @@
+.sidebar {
+  position: fixed;
+  top: 7%;
+  left: -250px;
+  width: 250px;
+  height: calc(100% - 7%);
+  background-color: rgb(33, 37, 41);
+  box-shadow: 2px 0 5px rgba(255, 255, 255, 0.5);
+  transition: left 0.3s ease;
+  z-index: 1000;
+}
+
+.sidebar.show {
+  left: 0;
+}
+
+.sidebar-content {
+  height: 100%;
+  padding: 20px;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.close-btn {
+  background-color: red;
+  border: none;
+  cursor: pointer;
+  color: white;
+  border-radius: 10px;
+}
+.close-btn:hover {
+  background-color: darkred;
+}
+
+sidebar-body {
+  overflow: auto;
+  height: calc(100% - 60px); /* Adjust height to account for header */
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+input[type="text"],
+input[type="date"],
+input[type="time"] {
+  width: 90%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+button {
+  margin-top: 15px;
+}
+
+.btn-primary {
+  background-color: green;
+  color: white;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.btn-danger {
+  background-color: red;
+  color: white;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.texto {
+  color: white;
+  font-size: 14px;
+}
+.texto:hover {
+  color: lightgray;
+}
+.texto:active {
+  color: gray;
+}

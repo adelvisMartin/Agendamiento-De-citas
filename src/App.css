@@ -1,0 +1,10 @@
+.btn-event {
+  background-color: rgb(68, 65, 250);
+  border: none;
+  cursor: pointer;
+  color: white;
+  padding: 20px;
+  border-radius: 10px;
+  margin-left: 10px;
+  margin-bottom: 20px;
+}
