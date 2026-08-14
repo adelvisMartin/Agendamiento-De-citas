@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          cat insave-ci/source.part* | base64 -d > "$RUNNER_TEMP/insave-canonical-source.zip"
+          cat insave-ci/source.part00 insave-ci/source.part01 insave-ci/source.part02 insave-ci/source.part03 insave-ci/source.part04a insave-ci/source.part04b insave-ci/source.part05 | base64 -d > "$RUNNER_TEMP/insave-canonical-source.zip"
           echo '7eb13bcc78b8290e9b3d6e3d31ca7360b7b0115db589fc592906ebfe73b3c77f  '"$RUNNER_TEMP/insave-canonical-source.zip" | sha256sum -c -
           rm -rf "$RUNNER_TEMP/insave"
           mkdir -p "$RUNNER_TEMP/insave"
