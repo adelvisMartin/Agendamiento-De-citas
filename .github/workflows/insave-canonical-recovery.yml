@@ -53,6 +53,21 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
           test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
 
+      - name: Normalize Java and Kotlin JVM 17
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("/home/runner/work/_temp/insave/app/build.gradle.kts")
+          s = p.read_text()
+          marker = "android {\n"
+          block = "android {\n    compileOptions {\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }\n"
+          if "sourceCompatibility = JavaVersion.VERSION_17" not in s:
+              s = s.replace(marker, block, 1)
+          p.write_text(s)
+          PY
+
       - name: Generate fresh canonical signing identity
         shell: bash
         run: |
@@ -117,7 +132,7 @@ jobs:
           OUT="$RUNNER_TEMP/delivery"
           mkdir -p "$OUT"
           cp "$RUNNER_TEMP/insave/app/build/outputs/apk/release/app-release.apk" "$OUT/InSave-Canonical-v1.0.0-arm64.apk" 2>/dev/null || true
-          cp "$RUNNER_TEMP/insave-canonical-source.zip" "$OUT/InSave-Canonical-v1.0.0-source.zip" 2>/dev/null || true
+          if [ -d "$RUNNER_TEMP/insave" ]; then (cd "$RUNNER_TEMP/insave" && zip -qr "$OUT/InSave-Canonical-v1.0.0-source.zip" .); fi
           cp "$RUNNER_TEMP/InSave-canonical-release.p12" "$OUT/" 2>/dev/null || true
           cp "$RUNNER_TEMP/InSave-canonical-signing-password.txt" "$OUT/" 2>/dev/null || true
           cp "$RUNNER_TEMP/apksigner.txt" "$OUT/" 2>/dev/null || true
