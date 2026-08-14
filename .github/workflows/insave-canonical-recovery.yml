@@ -53,18 +53,27 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
           test -x "$ANDROID_HOME/build-tools/36.0.0/zipalign"
 
-      - name: Normalize Java and Kotlin JVM 17
+      - name: Normalize recovered source before build
         shell: bash
         run: |
           set -euxo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          p = Path("/home/runner/work/_temp/insave/app/build.gradle.kts")
+          root = Path("/home/runner/work/_temp/insave")
+          p = root / "app/build.gradle.kts"
           s = p.read_text()
           marker = "android {\n"
           block = "android {\n    compileOptions {\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }\n"
           if "sourceCompatibility = JavaVersion.VERSION_17" not in s:
               s = s.replace(marker, block, 1)
+          p.write_text(s)
+
+          p = root / "app/src/main/java/com/adelvis/insave/MainActivity.kt"
+          s = p.read_text()
+          bad = 'private fun openUri(context:android.content.Context,uri:String):()->Unit={return{runCatching{context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))}}}'
+          good = 'private fun openUri(context:android.content.Context,uri:String):()->Unit = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) } }'
+          if bad in s:
+              s = s.replace(bad, good)
           p.write_text(s)
           PY
 
