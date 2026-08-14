@@ -1,0 +1,144 @@
+name: InSave Canonical Recovery Gate
+
+on:
+  push:
+    branches:
+      - ci/insave-canonical-recovery-v1
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-device-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Expand canonical source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat insave-ci/source.part* | base64 -d > "$RUNNER_TEMP/insave-canonical-source.zip"
+          echo '7eb13bcc78b8290e9b3d6e3d31ca7360b7b0115db589fc592906ebfe73b3c77f  '"$RUNNER_TEMP/insave-canonical-source.zip" | sha256sum -c -
+          rm -rf "$RUNNER_TEMP/insave"
+          mkdir -p "$RUNNER_TEMP/insave"
+          unzip -q "$RUNNER_TEMP/insave-canonical-source.zip" -d "$RUNNER_TEMP/insave"
+          test -f "$RUNNER_TEMP/insave/settings.gradle.kts"
+
+      - name: Ensure Android SDK 36
+        shell: bash
+        run: |
+          set -euxo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" "emulator" "system-images;android-35;google_apis;x86_64"
+
+      - name: Generate fresh canonical signing identity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PASS="$(openssl rand -hex 20)"
+          KS="$RUNNER_TEMP/InSave-canonical-release.p12"
+          keytool -genkeypair -v -storetype PKCS12 -keystore "$KS" -storepass "$PASS" -keypass "$PASS" -alias insave -keyalg RSA -keysize 3072 -validity 10000 -dname "CN=InSave Canonical, OU=Local Recovery, O=Adelvis, C=VE"
+          echo "INSAVE_KEYSTORE_PATH=$KS" >> "$GITHUB_ENV"
+          echo "INSAVE_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "INSAVE_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "INSAVE_KEY_ALIAS=insave" >> "$GITHUB_ENV"
+          echo "$PASS" > "$RUNNER_TEMP/InSave-canonical-signing-password.txt"
+
+      - name: Unit, lint and APK builds
+        working-directory: ${{ runner.temp }}/insave
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle --no-daemon clean testDebugUnitTest lintDebug assembleDebug assembleRelease
+
+      - name: Verify release signing, alignment and ABI
+        working-directory: ${{ runner.temp }}/insave
+        shell: bash
+        run: |
+          set -euxo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apksigner.txt"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK" | tee "$RUNNER_TEMP/zipalign.txt"
+          unzip -l "$APK" | tee "$RUNNER_TEMP/apk-files.txt"
+          grep -q 'lib/arm64-v8a/libpython.so' "$RUNNER_TEMP/apk-files.txt"
+          if grep -q 'lib/x86_64/' "$RUNNER_TEMP/apk-files.txt"; then echo 'release unexpectedly contains x86_64'; exit 1; fi
+
+      - name: Android API 35 real launch + instrumentation + YouTube E2E
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          disk-size: 6000M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -euxo pipefail
+            cd "$RUNNER_TEMP/insave"
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell am force-stop com.adelvis.insave.debug
+            adb shell am start -W -n com.adelvis.insave.debug/com.adelvis.insave.MainActivity | tee "$RUNNER_TEMP/launch.txt"
+            sleep 5
+            adb shell pidof com.adelvis.insave.debug | tee "$RUNNER_TEMP/pid.txt"
+            test -s "$RUNNER_TEMP/pid.txt"
+            gradle --no-daemon connectedDebugAndroidTest
+            adb logcat -d -v threadtime | tail -n 4000 > "$RUNNER_TEMP/logcat.txt"
+            if grep -E 'FATAL EXCEPTION.*com\.adelvis\.insave|Process: com\.adelvis\.insave\.debug' "$RUNNER_TEMP/logcat.txt"; then exit 1; fi
+
+      - name: Package auditable delivery
+        if: always()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          OUT="$RUNNER_TEMP/delivery"
+          mkdir -p "$OUT"
+          cp "$RUNNER_TEMP/insave/app/build/outputs/apk/release/app-release.apk" "$OUT/InSave-Canonical-v1.0.0-arm64.apk" 2>/dev/null || true
+          cp "$RUNNER_TEMP/insave-canonical-source.zip" "$OUT/InSave-Canonical-v1.0.0-source.zip" 2>/dev/null || true
+          cp "$RUNNER_TEMP/InSave-canonical-release.p12" "$OUT/" 2>/dev/null || true
+          cp "$RUNNER_TEMP/InSave-canonical-signing-password.txt" "$OUT/" 2>/dev/null || true
+          cp "$RUNNER_TEMP/apksigner.txt" "$OUT/" 2>/dev/null || true
+          cp "$RUNNER_TEMP/zipalign.txt" "$OUT/" 2>/dev/null || true
+          cp "$RUNNER_TEMP/launch.txt" "$OUT/" 2>/dev/null || true
+          cp "$RUNNER_TEMP/logcat.txt" "$OUT/" 2>/dev/null || true
+          if [ -f "$OUT/InSave-Canonical-v1.0.0-arm64.apk" ]; then sha256sum "$OUT/InSave-Canonical-v1.0.0-arm64.apk" > "$OUT/SHA256SUMS.txt"; fi
+          cat > "$OUT/QA-GATE.txt" <<'TXT'
+          InSave Canonical Recovery v1.0.0
+          Required green gate:
+          - unit tests for checkbox/snapshot contract
+          - Android lint
+          - debug + signed release builds
+          - apksigner verification
+          - zipalign verification
+          - ARM64-only release validation
+          - Android API 35 emulator install + real process launch
+          - Compose UI smoke instrumentation
+          - real YouTube search E2E
+          - real YouTube MP3 download E2E using the yt-dlp test video
+          TXT
+
+      - name: Upload delivery artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: InSave-Canonical-v1.0.0-delivery
+          path: ${{ runner.temp }}/delivery
+          if-no-files-found: error
+          retention-days: 7
